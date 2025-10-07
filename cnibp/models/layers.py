@@ -18,16 +18,25 @@ class PositionalEncoding(nn.Module):
         return self.dropout(x)
 
 class TemporalInception(nn.Module):
+    """
+    Inception-style 1D block that splits 'out_ch' across 3 branches and
+    guarantees the concatenated channels == out_ch (no BN mismatch).
+    """
     def __init__(self, in_ch, out_ch):
         super().__init__()
-        b = out_ch // 3
-        self.b1 = nn.Conv1d(in_ch, b, kernel_size=3, padding=1)
-        self.b2 = nn.Conv1d(in_ch, b, kernel_size=5, padding=2)
-        self.b3 = nn.Conv1d(in_ch, b, kernel_size=7, padding=3)
+        # make branches sum exactly to out_ch
+        b1 = out_ch // 3
+        b2 = out_ch // 3
+        b3 = out_ch - (b1 + b2)  # remainder goes here (works for any out_ch)
+
+        self.b1 = nn.Conv1d(in_ch, b1, kernel_size=3, padding=1, bias=False)
+        self.b2 = nn.Conv1d(in_ch, b2, kernel_size=5, padding=2, bias=False)
+        self.b3 = nn.Conv1d(in_ch, b3, kernel_size=7, padding=3, bias=False)
+
         self.bn = nn.BatchNorm1d(out_ch)
         self.act = nn.GELU()
 
-    def forward(self, x):       # [B,C,T]
-        y = torch.cat([self.b1(x), self.b2(x), self.b3(x)], dim=1)
+    def forward(self, x):       # x: [B,C,T]
+        y = torch.cat([self.b1(x), self.b2(x), self.b3(x)], dim=1)  # [B,out_ch,T]
         y = self.bn(y)
         return self.act(y)
